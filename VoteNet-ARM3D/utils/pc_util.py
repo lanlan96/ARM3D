@@ -29,17 +29,6 @@ import trimesh
 import matplotlib.pyplot as pyplot
 
 # ----------------------------------------
-# Point cloud IO
-# ----------------------------------------
-
-def read_ply_scannet(filename):
-    """ read XYZ point cloud from filename PLY file """
-    plydata = PlyData.read(filename)
-    pc = plydata['vertex'].data
-    pc_array = np.array([[x, y, z, r, g, b] for x,y,z,r,g,b,i in pc])
-    return pc_array
-
-# ----------------------------------------
 # Point Cloud Sampling
 # ----------------------------------------
 
@@ -200,6 +189,14 @@ def point_cloud_to_image(points, imgsize, radius=1.0, num_sample=128):
 # ----------------------------------------
 # Point cloud IO
 # ----------------------------------------
+
+
+def read_ply_scannet(filename):
+    """ read XYZ point cloud from filename PLY file """
+    plydata = PlyData.read(filename)
+    pc = plydata['vertex'].data
+    pc_array = np.array([[x, y, z] for x,y,z,r,g,b,i in pc])
+    return pc_array
 
 def read_ply(filename):
     """ read XYZ point cloud from filename PLY file """
@@ -543,3 +540,78 @@ if __name__ == '__main__':
     print('tests PASSED')
     
     
+
+def read_mesh(filename):
+    """ read XYZ for each vertex.
+    """
+    assert os.path.isfile(filename)
+    with open(filename, 'rb') as f:
+        plydata = PlyData.read(f)
+        num_verts = plydata['vertex'].count
+        vertices = np.zeros(shape=[num_verts, 7], dtype=np.float32)
+        print(plydata['vertex'].data['x'].shape)
+        vertices[:, 0] = plydata['vertex'].data['x']
+        vertices[:, 1] = plydata['vertex'].data['y']
+        vertices[:, 2] = plydata['vertex'].data['z']
+        vertices[:, 3] = plydata['vertex'].data['red']
+        vertices[:, 4] = plydata['vertex'].data['green']
+        vertices[:, 5] = plydata['vertex'].data['blue']
+        vertices[:, 6] = plydata['vertex'].data['alpha']
+
+    return vertices, plydata['face']
+
+def write_mesh(vertices, faces, outname):
+    new_vertices = []
+    for i in range(vertices.shape[0]):
+        new_vertices.append(
+            (
+                vertices[i][0],
+                vertices[i][1],
+                vertices[i][2],
+                vertices[i][3],
+                vertices[i][4],
+                vertices[i][5],
+                vertices[i][6],
+            )
+        )
+
+    vertices = np.array(
+        new_vertices,
+        dtype=[
+            ("x", np.dtype("float32")),
+            ("y", np.dtype("float32")),
+            ("z", np.dtype("float32")),
+            ("red", np.dtype("uint8")),
+            ("green", np.dtype("uint8")),
+            ("blue", np.dtype("uint8")),
+            ("alpha", np.dtype("uint8"))
+        ]
+    )
+
+    vertices = PlyElement.describe(vertices, "vertex")
+    mesh = PlyData([vertices, faces])
+    mesh.write(outname)
+
+def export_aligned_mesh(filename, meta_file, out_name):
+    # 1. read pc
+    # filename = os.path.join(ROOT, "scene0000_00_vh_clean_2.ply")
+    vertices, faces = read_mesh(filename)
+
+    # 2. 
+    # meta_file = os.path.join(ROOT, "scene0000_00.txt")
+    lines = open(meta_file).readlines()
+    axis_align_matrix = None
+    for line in lines:
+        if 'axisAlignment' in line:
+            axis_align_matrix = [float(x) for x in line.rstrip().strip('axisAlignment = ').split(' ')]
+
+    # 3. 
+    if axis_align_matrix != None:
+        axis_align_matrix = np.array(axis_align_matrix).reshape((4, 4))
+        pts = np.ones((vertices.shape[0], 4))
+        pts[:, 0:3] = vertices[:, :3]
+        pts = np.dot(pts, axis_align_matrix.transpose())
+        aligned_vertices = np.copy(vertices)
+        aligned_vertices[:, 0:3] = pts[:, 0:3]
+
+    write_mesh(aligned_vertices, faces, out_name)

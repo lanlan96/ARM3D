@@ -3,7 +3,9 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-""" Demo of using VoteNet 3D object detector to detect objects from a point cloud.
+""" Demo of using VoteNet+ARM3D 3D object detector to detect objects from a point cloud.
+Input: scene_name+"_vh_clean_2.ply"
+Ouput: pred box, gt box and aligned mesh.ply
 """
 
 import os
@@ -14,9 +16,20 @@ import importlib
 import time
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', default='sunrgbd', help='Dataset: sunrgbd or scannet [default: sunrgbd]')
-parser.add_argument('--num_point', type=int, default=20000, help='Point Number [default: 20000]')
+parser.add_argument('--num_point', type=int, default=40000, help='Point Number [default: 40000]')
+parser.add_argument('--scene_name', default='scene0609_02', help='Scene name. [default: scene0609_02_vh_clean_2.ply]')
+parser.add_argument('--checkpoint_path', default='demo_files/pretrained_mlcvnet_on_scannet.tar', help='Scene name')
+parser.add_argument('--pc_root', default='/home/lyq/Dataset/ScanNet/scannet/', help='pc root')
+parser.add_argument('--model', default='votenet_ARM3D', help='Model for visualization')
+parser.add_argument('--num_target', type=int, default=256, help='Point Number [default: 256]')
+
 FLAGS = parser.parse_args()
+FLAGS.relation_pair = 8
+FLAGS.relation_type = []
+FLAGS.relation_type.append('same_category')
+FLAGS.random = True 
+
+
 
 import torch
 import torch.nn as nn
@@ -26,7 +39,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
-from pc_util import random_sampling, read_ply
+from pc_util import random_sampling, read_ply_scannet, export_aligned_mesh
 from ap_helper import parse_predictions
 
 def preprocess_point_cloud(point_cloud):
@@ -39,37 +52,117 @@ def preprocess_point_cloud(point_cloud):
     pc = np.expand_dims(point_cloud.astype(np.float32), 0) # (1,40000,4)
     return pc
 
-if __name__=='__main__':
-    
-    # Set file paths and dataset config
-    demo_dir = os.path.join(BASE_DIR, 'demo_files') 
-    if FLAGS.dataset == 'sunrgbd':
-        sys.path.append(os.path.join(ROOT_DIR, 'sunrgbd'))
-        from sunrgbd_detection_dataset import DC # dataset config
-        checkpoint_path = os.path.join(demo_dir, 'pretrained_votenet_on_sunrgbd.tar')
-        pc_path = os.path.join(demo_dir, 'input_pc_sunrgbd.ply')
-    elif FLAGS.dataset == 'scannet':
-        sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
-        from scannet_detection_dataset import DC # dataset config
-        checkpoint_path = os.path.join(demo_dir, 'pretrained_votenet_on_scannet.tar')
-        pc_path = os.path.join(demo_dir, 'input_pc_scannet.ply')
-    else:
-        print('Unkown dataset %s. Exiting.'%(DATASET))
-        exit(-1)
 
+def get_GTlabel(end_points, scan_name, data_path = 'scannet/scannet_train_detection_data'):
+    """
+    Returns a dict with following keys:
+        point_clouds: (N,3+C)
+        center_label: (MAX_NUM_OBJ,3) for GT box center XYZ
+        sem_cls_label: (MAX_NUM_OBJ,) semantic class index
+        angle_class_label: (MAX_NUM_OBJ,) with int values in 0,...,NUM_HEADING_BIN-1
+        angle_residual_label: (MAX_NUM_OBJ,)
+        size_classe_label: (MAX_NUM_OBJ,) with int values in 0,...,NUM_SIZE_CLUSTER
+        size_residual_label: (MAX_NUM_OBJ,3)
+        box_label_mask: (MAX_NUM_OBJ) as 0/1 with 1 indicating a unique box
+        point_votes: (N,3) with votes XYZ
+        point_votes_mask: (N,) with 0/1 with 1 indicating the point is in one of the object's OBB.
+        scan_idx: int scan index in scan_names list
+        pcl_color: unused
+    """
+    MAX_NUM_OBJ = 64
+    num_points = 40000
+
+    # scan_name = self.scan_names[idx]        
+    mesh_vertices = np.load(os.path.join(data_path, scan_name)+'_vert.npy')
+    instance_labels = np.load(os.path.join(data_path, scan_name)+'_ins_label.npy')
+    semantic_labels = np.load(os.path.join(data_path, scan_name)+'_sem_label.npy')
+    instance_bboxes = np.load(os.path.join(data_path, scan_name)+'_bbox.npy')
+
+    # ------------------------------- LABELS ------------------------------        
+    target_bboxes = np.zeros((MAX_NUM_OBJ, 6))
+    target_bboxes_mask = np.zeros((MAX_NUM_OBJ))    
+    angle_classes = np.zeros((MAX_NUM_OBJ,))
+    angle_residuals = np.zeros((MAX_NUM_OBJ,))
+    size_classes = np.zeros((MAX_NUM_OBJ,))
+    size_residuals = np.zeros((MAX_NUM_OBJ, 3))
+
+
+    target_bboxes_mask[0:instance_bboxes.shape[0]] = 1
+    target_bboxes[0:instance_bboxes.shape[0],:] = instance_bboxes[:,0:6]
+
+
+    class_ind = [np.where(DC.nyu40ids == x)[0][0] for x in instance_bboxes[:,-1]]   
+    # NOTE: set size class as semantic class. Consider use size2class.
+    size_classes[0:instance_bboxes.shape[0]] = class_ind
+    size_residuals[0:instance_bboxes.shape[0], :] = \
+        target_bboxes[0:instance_bboxes.shape[0], 3:6] - DC.mean_size_arr[class_ind,:]
+        
+    # ret_dict = {}
+    # ret_dict['point_clouds'] = point_cloud.astype(np.float32)
+    end_points['center_label'] = target_bboxes.astype(np.float32)[:,0:3]
+    end_points['heading_class_label'] = angle_classes.astype(np.int64)
+    end_points['heading_residual_label'] = angle_residuals.astype(np.float32)
+    end_points['size_class_label'] = size_classes.astype(np.int64)
+    end_points['size_residual_label'] = size_residuals.astype(np.float32)
+    target_bboxes_semcls = np.zeros((MAX_NUM_OBJ))                                
+    target_bboxes_semcls +=100
+    target_bboxes_semcls[0:instance_bboxes.shape[0]] = \
+        [DC.nyu40id2class[x] for x in instance_bboxes[:,-1][0:instance_bboxes.shape[0]]]                
+    end_points['sem_cls_label'] = target_bboxes_semcls.astype(np.int64)
+    end_points['box_label_mask'] = target_bboxes_mask.astype(np.float32)
+    end_points['mesh_vertice'] = mesh_vertices
+
+    return end_points
+
+
+if __name__=='__main__':
+    num_input_channel = 1
+    # Set file paths and dataset config
+    demo_dir = os.path.join(ROOT_DIR, 'detection_vis')+"/"+FLAGS.model
+    if not os.path.exists(demo_dir): os.mkdir(demo_dir) 
+    
+    sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
+    from scannet_detection_dataset import DC # dataset config
+    # checkpoint_path = os.path.join(demo_dir, 'pretrained_mlcvnet_on_scannet.tar')
+    checkpoint_path = FLAGS.checkpoint_path
+    # Make sure your scannet ply file get transformed first, use rotate_val_scans.py to transform
+    # Put any scannet transformed ply file in the demo_files folder and put its file name here
+    # Then run demo.py
+    scene_pc = FLAGS.scene_name +"_vh_clean_2.ply"
+    scene_meta = FLAGS.scene_name +".txt"
+    pc_path = os.path.join("scannet/scans/"+FLAGS.scene_name, scene_pc)
+
+    #rotate the scene and save aligned mesh
+    dump_dir = os.path.join(demo_dir, FLAGS.scene_name)
+    if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
+    clean_pc_path = FLAGS.pc_root+FLAGS.scene_name +"/"+ scene_pc
+    scene_meta_path = FLAGS.pc_root+FLAGS.scene_name +"/"+scene_meta
+    export_aligned_mesh(clean_pc_path,scene_meta_path,dump_dir+"/"+FLAGS.scene_name+".ply")
+    print("Export axis aligned mesh")
+
+    scan_name = FLAGS.scene_name
+    
     eval_config_dict = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': 0.25,
         'use_old_type_nms': False, 'cls_nms': False, 'per_class_proposal': False,
         'conf_thresh': 0.5, 'dataset_config': DC}
 
     # Init the model and optimzier
-    MODEL = importlib.import_module('votenet') # import network module
+    MODEL = importlib.import_module('votenet_with_rn') # import network module
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    net = MODEL.VoteNet(num_proposal=256, input_feature_dim=1, vote_factor=1,
-        sampling='seed_fps', num_class=DC.num_class,
-        num_heading_bin=DC.num_heading_bin,
-        num_size_cluster=DC.num_size_cluster,
-        mean_size_arr=DC.mean_size_arr).to(device)
-    print('Constructed model.')
+
+    if FLAGS.model =='votenet_ARM3D':
+        MODEL = importlib.import_module('votenet_ARM3D') # import network module
+        net = MODEL.VoteNet_ARM3D(num_class=DC.num_class,
+                num_heading_bin=DC.num_heading_bin,
+                num_size_cluster=DC.num_size_cluster,
+                mean_size_arr=DC.mean_size_arr,
+                num_proposal=FLAGS.num_target,
+                input_feature_dim=num_input_channel,
+                relation_pair=FLAGS.relation_pair,
+                relation_type=FLAGS.relation_type,
+                random=FLAGS.random).to(device)
+
+    print('Constructed model:',FLAGS.model)
     
     # Load checkpoint
     optimizer = optim.Adam(net.parameters(), lr=0.001)
@@ -81,7 +174,9 @@ if __name__=='__main__':
    
     # Load and preprocess input point cloud 
     net.eval() # set model to eval mode (for bn and dp)
-    point_cloud = read_ply(pc_path)
+    pc_path = dump_dir+"/"+FLAGS.scene_name+".ply"
+
+    point_cloud = read_ply_scannet(pc_path)
     pc = preprocess_point_cloud(point_cloud)
     print('Loaded point cloud data: %s'%(pc_path))
    
@@ -94,9 +189,16 @@ if __name__=='__main__':
     print('Inference time: %f'%(toc-tic))
     end_points['point_clouds'] = inputs['point_clouds']
     pred_map_cls = parse_predictions(end_points, eval_config_dict)
+    end_points = get_GTlabel(end_points, scan_name)
+    # print("KEYS:",end_points.keys())
     print('Finished detection. %d object detected.'%(len(pred_map_cls[0])))
   
-    dump_dir = os.path.join(demo_dir, '%s_results'%(FLAGS.dataset))
+
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
-    MODEL.dump_results(end_points, dump_dir, DC, True)
+    MODEL.dump_results(end_points, dump_dir, DC, False)
     print('Dumped detection results to folder %s'%(dump_dir))
+    
+
+
+
+
