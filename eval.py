@@ -22,11 +22,6 @@ sys.path.append(os.path.join(ROOT_DIR, 'models'))
 from ap_helper import APCalculator, parse_predictions, parse_groundtruths
 import xlwt, xlrd
 
-# # 保证训练时获取的随机数都是一样的
-# init_seed = 1
-# torch.manual_seed(init_seed)
-# torch.cuda.manual_seed(init_seed)
-# np.random.seed(init_seed) # 用于numpy的随机数
 
 
 parser = argparse.ArgumentParser()
@@ -61,7 +56,7 @@ if FLAGS.use_cls_nms:
     assert(FLAGS.use_3d_nms)
 
 # ------------------------------------------------------------------------- GLOBAL CONFIG BEG
-# FLAGS.checkpoint_path = 'log_scannet/log_rn8_support_random/checkpoint.tar'
+
 FLAGS.relation_pair = FLAGS.checkpoint_path.split('rn')[1].split('_')[0]
 print( "PAIR_NUM:",FLAGS.relation_pair)
 if not FLAGS.relation_pair.startswith('adaptive'):
@@ -134,7 +129,7 @@ else:
     print('Unknown dataset %s. Exiting...'%(FLAGS.dataset))
     exit(-1)
 print(len(TEST_DATASET))
-#TODO: 还random随机数呢 FLAGS.shuffle_dataset: False
+
 TEST_DATALOADER = DataLoader(TEST_DATASET, batch_size=BATCH_SIZE,
     shuffle=FLAGS.shuffle_dataset, num_workers=4, worker_init_fn=my_worker_init_fn)
 print("FLAGS.shuffle_dataset:",FLAGS.shuffle_dataset)
@@ -195,14 +190,8 @@ def evaluate_one_epoch():
         for iou_thresh in AP_IOU_THRESHOLDS]
     net.eval() # set model to eval mode (for bn and dp)
 
-    #TODO: TXT
-    # file_handle=open('attention_vis/0_J2.txt',mode='w')
-
-    #TODO: 只eval一个scan的
-    # TEST_DATALOADER = TEST_DATALOADER[0]
     for batch_idx, batch_data_label in enumerate(TEST_DATALOADER):
-        # if batch_idx > 2:
-        #     break
+
 
         if batch_idx % 10 == 0:
             print('Eval batch: %d'%(batch_idx))
@@ -228,95 +217,16 @@ def evaluate_one_epoch():
             # print("key:",key,batch_data_label[key].shape)
         loss, end_points = criterion(end_points, DATASET_CONFIG)
 
-        # """
-        # 待删除
-        # """
-        # class_list_tmp = ['window', 'bed', 'counter', 'sofa', 'table', 'showercurtrain', 'garbagebin', 'sink', 'picture',
-        #           'chair', 'desk', 'curtain', 'refrigerator', 'door', 'toilet', 'bookshelf', 'bathtub', 'cabinet',
-        #           'mAP', 'AR']
-        # att_trans = end_points['att_trans']
-        # bs, num_p, max_pairs = att_trans.shape
-        # _label_j = end_points['_label_j'].reshape(bs, num_p, max_pairs)
-        # print("MAX:",torch.max(att_trans[0,:,:]))
-        # print("MIN:",torch.min(att_trans[0,:,:]))
-        # print("SUM:",torch.sum(att_trans[0,:,:]))
-        # print("MEAN:",torch.mean(att_trans[0,:,:]))
-        # print("att_trans shape:", att_trans.shape)
-        # print("threshold:",torch.nonzero(att_trans<0.8).shape)
-        # print("threshold per proposal:",torch.nonzero(att_trans[0,0,:]<=0.8))
-        # # print("threshold per proposal:",(att_trans[0,0,:]>=0.019))
-        # print("threshold per proposal v:",att_trans[0][0][att_trans[0,0,:]<=0.8])
-        # # print(j for j in _label_j[0][0][att_trans[0,0,:]>=0.019].cpu().detach().numpy())
-        # print("0 proposal:",class_list_tmp[_label_j[0][0][0]],"\nJ proposal:", [class_list_tmp[_label_j[0][0][j]]+" "+str(round(att_trans[0][0][j].item(),4)) for j in torch.nonzero(att_trans[0,0,:]<=0.8).cpu().detach().numpy()])
-        # print("\n")
-        # str1 = "0 proposal "+str(class_list_tmp[_label_j[0][0][0]])+"\n"
-        # str2 = "J proposal "+str([str(j)+"_"+class_list_tmp[_label_j[0][0][j]]+" "+str(round(att_trans[0][0][j].item(),4)) for j in torch.nonzero(att_trans[0,0,:]<=0.8).cpu().detach().numpy()])+"\n"
-        # file_handle.write(str1)
-        # file_handle.write(str2)
-
         # Accumulate statistics and print out
         for key in end_points:
             if 'loss' in key or 'acc' in key or 'ratio' in key:
                 if key not in stat_dict: stat_dict[key] = 0
                 stat_dict[key] += end_points[key].item()
 
-
-        '''
-        self.type2class = {'cabinet':0, 'bed':1, 'chair':2, 'sofa':3, 'table':4, 'door':5,
-            'window':6,'bookshelf':7,'picture':8, 'counter':9, 'desk':10, 'curtain':11,
-            'refrigerator':12, 'showercurtrain':13, 'toilet':14, 'sink':15, 'bathtub':16, 'garbagebin':17}  
-        '''
-
-
         batch_pred_map_cls = parse_predictions(end_points, CONFIG_DICT) 
         batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT) 
         for ap_calculator in ap_calculator_list:
             ap_calculator.step(batch_pred_map_cls, batch_gt_map_cls)  #Accumulate one batch of prediction and groundtruth.
-
-        # sys.exit()
-        #TODO:暂时不用保存可视化结果
-        # Dump evaluation results for visualization
-        # if batch_idx == 0:
-        #     MODEL.dump_results(end_points, DUMP_DIR, DATASET_CONFIG)
-
-        # Record the bbox before/after nms for vis
-        # pred_center = end_points['center'].detach().cpu().numpy()  # (B,K,3)
-        # pred_heading_class = torch.argmax(end_points['heading_scores'], -1)  # B,num_proposal
-        # pred_heading_residual = torch.gather(end_points['heading_residuals'], 2,
-        #                                      pred_heading_class.unsqueeze(-1))  # B,num_proposal,1
-        # pred_heading_class = pred_heading_class.detach().cpu().numpy()  # B,num_proposal
-        # pred_heading_residual = pred_heading_residual.squeeze(2).detach().cpu().numpy()  # B,num_proposal
-        # pred_size_class = torch.argmax(end_points['size_scores'], -1)  # B,num_proposal
-        # pred_size_residual = torch.gather(end_points['size_residuals'], 2,
-        #                                   pred_size_class.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, 1,
-        #                                                                                      3))  # B,num_proposal,1,3
-        # pred_size_residual = pred_size_residual.squeeze(2).detach().cpu().numpy()  # B,num_proposal,3
-        # pred_size_class = pred_size_class.detach().cpu().numpy()
-        # for _i in range(len(pred_center)):
-        #     pred_dict.append({
-        #         'point_clouds': end_points['mesh_vertices'][_i].detach().cpu().numpy(),
-        #         'pred_corners_3d_upright_camera': end_points['pred_corners_3d_upright_camera'][_i],
-        #         'pred_mask': end_points['pred_mask'][_i],
-        #         'pred_center': pred_center[_i],
-        #         'pred_heading_class': pred_heading_class[_i],
-        #         'pred_heading_residual': pred_heading_residual[_i],
-        #         'pred_size_class': pred_size_class[_i],
-        #         'pred_size_residual': pred_size_residual[_i],
-        #         'nearest_n_index': end_points['nearest_n_index'][_i].detach().cpu().numpy(),
-        #         'sem_cls_label': torch.gather(end_points['sem_cls_label'], 1, end_points['object_assignment'])[
-        #             _i].detach().cpu().numpy(),
-        #         'rn_label': end_points['rn_labels_1'][_i].detach().cpu().numpy(),
-        #         # 'scan_name': TEST_DATASET.scan_names[batch_data_label['scan_idx'][_i]]
-        #     })
-    #TODO: TXT
-    # file_handle.close()
-
-
-    # draw the bbox
-    # for _i in range(len(pred_dict)):
-    #     # draw_bbox(pred_dict[_i], DATASET_CONFIG, nms=True)
-    #     # draw_bbox2(pred_dict[_i])
-    #     draw_relation_pairs(pred_dict[_i], DATASET_CONFIG)
 
     # Log statistics
     for key in sorted(stat_dict.keys()):
@@ -349,21 +259,7 @@ def evaluate_one_epoch():
         'cabinet': [0.3886, 0.0936],
         'mAP': [0.5901, 0.3399]
     }
-
-    # baseline_sunrgbd = {
-    #     'bed': [0.858, 0],
-    #     'table': [0.504, 0],
-    #     'sofa': [0.663, 0],
-    #     'chair': [0.758,0],
-    #     'toilet': [0.5792, 0],
-    #     'desk': [0.265, 0],
-    #     'dresser': [0.313, 0],
-    #     'night_stand': [0.615, 0],
-    #     'bookshelf': [0.319, 0],
-    #     'bathtub': [0.792, 0],
-    #     'mAP': [0.577, 0.337]
-    # }
-    
+   
     baseline_sunrgbd = {
         'bed': [0.830, 0.501],
         'table': [0.473, 0.195],
@@ -393,7 +289,7 @@ def evaluate_one_epoch():
 
     style2 = xlwt.XFStyle()
     font = xlwt.Font()
-    font.bold = True  # 黑体
+    font.bold = True  # 
     style2.font = font
     style2.alignment = al
     
@@ -425,18 +321,7 @@ def evaluate_one_epoch():
                             worksheet.write(1, cols_num, baseline[cls][i], style2)
                             worksheet.write(2, cols_num, metrics_dict[key], style1)
 
-        #for key in metrics_dict:
-        #    log_string('eval %s: %f'%(key, metrics_dict[key]))
-    # for i, ap_calculator in enumerate(ap_calculator_list):
-    #     print('-'*10, 'iou_thresh: %f'%(AP_IOU_THRESHOLDS[i]), '-'*10)
-    #     metrics_dict = ap_calculator.compute_metrics()
-    #
-    #     for cls in class_list:
-    #         for key in metrics_dict:
-    #             if cls in key:
-    #                 log_string('eval %s: %f'%(key, metrics_dict[key]))
 
-    # workbook.save("./log_scannet/eval_" + FLAGS.checkpoint_path.split('/')[1] + ".xls")
     workbook.save(DUMP_DIR+"/eval_map.xls")
 
     mean_loss = stat_dict['loss']/float(batch_idx+1)

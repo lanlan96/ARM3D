@@ -3,7 +3,9 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-""" Demo of using MLCVNet 3D object detector to detect objects from a point cloud.
+""" Demo of using VoteNet+ARM3D 3D object detector to detect objects from a point cloud.
+Input: scene_name+"_vh_clean_2.ply"
+Ouput: pred box, gt box and aligned mesh.ply
 """
 
 import os
@@ -16,7 +18,7 @@ import time
 parser = argparse.ArgumentParser()
 parser.add_argument('--num_point', type=int, default=40000, help='Point Number [default: 40000]')
 parser.add_argument('--scene_name', default='scene0609_02', help='Scene name. [default: scene0609_02_vh_clean_2.ply]')
-parser.add_argument('--checkpoint_path', default='demo_files/pretrained_mlcvnet_on_scannet.tar', help='Scene name')
+parser.add_argument('--checkpoint_path', default='demo_files/VoteNet_ARM3D_pretrained_model.tar', help='pretrained model path')
 parser.add_argument('--pc_root', default='/home/lyq/Dataset/ScanNet/scannet/', help='pc root')
 parser.add_argument('--model', default='votenet_ARM3D', help='Model for visualization')
 parser.add_argument('--num_target', type=int, default=256, help='Point Number [default: 256]')
@@ -84,12 +86,6 @@ def get_GTlabel(end_points, scan_name, data_path = 'scannet/scannet_train_detect
     size_classes = np.zeros((MAX_NUM_OBJ,))
     size_residuals = np.zeros((MAX_NUM_OBJ, 3))
 
-    # point_cloud, choices = pc_util.random_sampling(point_cloud,
-    #     num_points, return_choices=True)        
-    # instance_labels = instance_labels[choices]
-    # semantic_labels = semantic_labels[choices]
-
-    # pcl_color = pcl_color[choices]
 
     target_bboxes_mask[0:instance_bboxes.shape[0]] = 1
     target_bboxes[0:instance_bboxes.shape[0],:] = instance_bboxes[:,0:6]
@@ -136,7 +132,7 @@ if __name__=='__main__':
     scene_meta = FLAGS.scene_name +".txt"
     pc_path = os.path.join("scannet/scans/"+FLAGS.scene_name, scene_pc)
 
-    #旋转原始场景点云并保存
+    #rotate the scene and save aligned mesh
     dump_dir = os.path.join(demo_dir, FLAGS.scene_name)
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
     clean_pc_path = FLAGS.pc_root+FLAGS.scene_name +"/"+ scene_pc
@@ -151,47 +147,11 @@ if __name__=='__main__':
         'conf_thresh': 0.5, 'dataset_config': DC}
 
     # Init the model and optimzier
-    MODEL = importlib.import_module('mlcvnet') # import network module
+    MODEL = importlib.import_module('votenet_with_rn') # import network module
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    if FLAGS.model =='mlcvnet':
-        MODEL = importlib.import_module('mlcvnet') # import network module
-        net = MODEL.MLCVNet(num_proposal=256, input_feature_dim=1, vote_factor=1,
-            sampling='seed_fps', num_class=DC.num_class,
-            num_heading_bin=DC.num_heading_bin,
-            num_size_cluster=DC.num_size_cluster,
-            mean_size_arr=DC.mean_size_arr).to(device)
-    if FLAGS.model =='votenet':
-        MODEL = importlib.import_module('votenet') # import network module
-        net = MODEL.VoteNet(num_class=DC.num_class,
-               num_heading_bin=DC.num_heading_bin,
-               num_size_cluster=DC.num_size_cluster,
-               mean_size_arr=DC.mean_size_arr,
-               num_proposal=FLAGS.num_target,
-               input_feature_dim=num_input_channel).to(device)
-    if FLAGS.model =='votenet_3DRM':    
-        MODEL = importlib.import_module('3DRM') # import network module
-        net = MODEL.VoteNet_3DRM(num_class=DC.num_class,
-               num_heading_bin=DC.num_heading_bin,
-               num_size_cluster=DC.num_size_cluster,
-               mean_size_arr=DC.mean_size_arr,
-               num_proposal=FLAGS.num_target,
-               input_feature_dim=num_input_channel,
-               relation_pair=FLAGS.relation_pair,
-               relation_type=FLAGS.relation_type,
-               random=FLAGS.random).to(device)
-    if FLAGS.model =='mlcvnet_3DRM':    
-        MODEL = importlib.import_module('3DRM') # import network module
-        net = MODEL.MLCVNet_3DRM(num_class=DC.num_class,
-                num_heading_bin=DC.num_heading_bin,
-                num_size_cluster=DC.num_size_cluster,
-                mean_size_arr=DC.mean_size_arr,
-                num_proposal=FLAGS.num_target,
-                input_feature_dim=num_input_channel,
-                relation_pair=FLAGS.relation_pair,
-                relation_type=FLAGS.relation_type,
-                random=FLAGS.random).to(device)
-    if FLAGS.model =='votenet_ARM_3D':
-        MODEL = importlib.import_module('ARM3D') # import network module
+
+    if FLAGS.model =='votenet_ARM3D':
+        MODEL = importlib.import_module('votenet_ARM3D') # import network module
         net = MODEL.VoteNet_ARM3D(num_class=DC.num_class,
                 num_heading_bin=DC.num_heading_bin,
                 num_size_cluster=DC.num_size_cluster,
@@ -201,18 +161,7 @@ if __name__=='__main__':
                 relation_pair=FLAGS.relation_pair,
                 relation_type=FLAGS.relation_type,
                 random=FLAGS.random).to(device)
-        # print(net.state_dict().keys())
-    if FLAGS.model =='mlcvnet_ARM_3D':
-        MODEL = importlib.import_module('ARM3D') # import network module
-        net = MODEL.MLCVNet_ARM3D(num_class=DC.num_class,
-                num_heading_bin=DC.num_heading_bin,
-                num_size_cluster=DC.num_size_cluster,
-                mean_size_arr=DC.mean_size_arr,
-                num_proposal=FLAGS.num_target,
-                input_feature_dim=num_input_channel,
-                relation_pair=FLAGS.relation_pair,
-                relation_type=FLAGS.relation_type,
-                random=FLAGS.random).to(device)
+
     print('Constructed model:',FLAGS.model)
     
     # Load checkpoint
@@ -226,7 +175,7 @@ if __name__=='__main__':
     # Load and preprocess input point cloud 
     net.eval() # set model to eval mode (for bn and dp)
     pc_path = dump_dir+"/"+FLAGS.scene_name+".ply"
-    # pc_path = '/home/lyq/Myproject/ARM3D_VIS/demo_files/scene0609_02_vh_clean_2.ply'
+
     point_cloud = read_ply_scannet(pc_path)
     pc = preprocess_point_cloud(point_cloud)
     print('Loaded point cloud data: %s'%(pc_path))

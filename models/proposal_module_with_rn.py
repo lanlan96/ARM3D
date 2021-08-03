@@ -202,8 +202,8 @@ class ProposalModule_pred(nn.Module):
         end_points = self.rnet(features, end_points)
         rn_feature = end_points['rn_feature']
         
-        print("net: {}, {}".format(torch.min(features), torch.max(features)))
-        print("rn: {}, {}".format(torch.min(rn_feature), torch.max(rn_feature)))
+        # print("net: {}, {}".format(torch.min(features), torch.max(features)))
+        # print("rn: {}, {}".format(torch.min(rn_feature), torch.max(rn_feature)))
 
         features = torch.cat((features, rn_feature), 1) #256维度吗?进入conv1之前 torch.Size([8, 256, 256])
 

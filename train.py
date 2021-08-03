@@ -200,29 +200,11 @@ it = -1 # for the initialize value of `LambdaLR` and `BNMomentumScheduler`
 start_epoch = 0
 
 if CHECKPOINT_PATH is not None and os.path.isfile(CHECKPOINT_PATH):
-    if FLAGS.obj_restore == 1:
-        checkpoint = torch.load(CHECKPOINT_PATH)['model_state_dict']
-        # print("checkpoint:",checkpoint.keys())
-        checkpoint = {k:v for k, v in checkpoint.items() if ('pnet.conv' in  k or 'pnet.bn' in k)} #只有votenet.pnet.conv1-3 bn1-2
-        checkpoint_new = {k.replace("pnet","pnet.onet"):v  for k, v in checkpoint.items()}
-        print ("checkpoint.keys():", checkpoint_new.keys())
-        model_dict = net.state_dict()
-
-        for k in model_dict.keys():
-            if k in checkpoint_new:
-                print("Loading {}".format(k))
-
-        
-        model_dict.update(checkpoint_new)
-        net.load_state_dict(model_dict)
-
-
-    else:
-        checkpoint = torch.load(CHECKPOINT_PATH)
-        net.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        start_epoch = checkpoint['epoch']
-        log_string("-> loaded checkpoint %s (epoch: %d)"%(CHECKPOINT_PATH, start_epoch))
+    checkpoint = torch.load(CHECKPOINT_PATH)
+    net.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    start_epoch = checkpoint['epoch']
+    log_string("-> loaded checkpoint %s (epoch: %d)"%(CHECKPOINT_PATH, start_epoch))
 
 
 

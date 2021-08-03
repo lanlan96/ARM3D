@@ -23,22 +23,18 @@ NEAR_THRESHOLD = 0.3
 GT_VOTE_FACTOR = 3 # number of GT votes per point
 OBJECTNESS_CLS_WEIGHTS = [0.2,0.8] # put larger weights on positive objectness
 
-# For nearest
-# RN_CLS_WEIGHTS = [0.8, 0.2] # put larger weights on negative objectness
-# RN_CLS_WEIGHTS1 = [0.14, 0.86] # put larger weights on negative objectness
-
 # For random
-RN_CLS_WEIGHTS = [0.3, 0.7] # scannet same_category
-RN_CLS_WEIGHTS1 = [0.2, 0.8] # scannet support
-RN_CLS_WEIGHTS2 = [0.05, 0.95] # scannet same_instance
+RN_CLS_WEIGHTS = [0.3, 0.7] # scannet semantic
+RN_CLS_WEIGHTS1 = [0.2, 0.8] # scannet spatial
+RN_CLS_WEIGHTS2 = [0.05, 0.95] # scannet 
 
 #RN_CLS_WEIGHTS = [0.25, 0.75] # sunrgbd
 #RN_CLS_WEIGHTS1 = [0.1, 0.9] # sunrgbd
 #RN_CLS_WEIGHTS2 = [0.05, 0.95] # sunrgbd
 
-print("RN_CLS_WEIGHTS: ", RN_CLS_WEIGHTS)
-print("RN_CLS_WEIGHTS1: ", RN_CLS_WEIGHTS1)
-print("RN_CLS_WEIGHTS2: ", RN_CLS_WEIGHTS2)
+# print("RN_CLS_WEIGHTS: ", RN_CLS_WEIGHTS)
+# print("RN_CLS_WEIGHTS1: ", RN_CLS_WEIGHTS1)
+# print("RN_CLS_WEIGHTS2: ", RN_CLS_WEIGHTS2)
 
 def compute_vote_loss(end_points):
     """ Compute vote loss: Match predicted votes to GT votes.
@@ -173,7 +169,7 @@ def compute_objectness_loss(end_points):
     objectness_mask = torch.zeros((B,K)).cuda()
     objectness_label[euclidean_dist1<NEAR_THRESHOLD] = 1
     objectness_mask[euclidean_dist1<NEAR_THRESHOLD] = 1
-    objectness_mask[euclidean_dist1>FAR_THRESHOLD] = 1 #TODO:
+    objectness_mask[euclidean_dist1>FAR_THRESHOLD] = 1 
 
     # Compute objectness loss
     objectness_scores = end_points['objectness_scores']
@@ -255,7 +251,7 @@ def compute_box_and_sem_cls_loss(end_points, config):
     size_residual_normalized_loss = torch.mean(huber_loss(predicted_size_residual_normalized - size_residual_label_normalized, delta=1.0), -1) # (B,K,3) -> (B,K) 
     size_residual_normalized_loss = torch.sum(size_residual_normalized_loss*objectness_label)/(torch.sum(objectness_label)+1e-6)
 
-    # 3.4 Semantic cls loss Object Assignment的意思就是每一个cluster中心点距离最近的哪个GT object
+    # 3.4 Semantic cls loss Object Assignment
     sem_cls_label = torch.gather(end_points['sem_cls_label'], 1, object_assignment) # select (B,K) from (B,K2)
     criterion_sem_cls = nn.CrossEntropyLoss(reduction='none')
     sem_cls_loss = criterion_sem_cls(end_points['sem_cls_scores'].transpose(2,1), sem_cls_label) # (B,K)
@@ -471,7 +467,7 @@ def compute_multi_rn_cls_loss_cluster(end_points):
 
         _label_i = proposal_labels.unsqueeze(2).repeat(1, 1, pair_num).view(bs, roi_num * pair_num)
         # _label_j = proposal_labels.index_select(1, nearest_n_index_reshape)
-        # _label_j = _label_j[torch.arange(bs).cuda().view(bs, -1), torch.arange(bs * roi_num * pair_num).view(bs, -1)] #TODO: 不是很清楚这个第一个维度为什么是bs, -1
+        # _label_j = _label_j[torch.arange(bs).cuda().view(bs, -1), torch.arange(bs * roi_num * pair_num).view(bs, -1)] 
         _label_j = cluster_cls.unsqueeze(1).repeat(1, roi_num, 1).view(bs, roi_num * pair_num)
         end_points["_label_j"] = _label_j
         rn_labels_0 = (_label_i.eq(_label_j).long())
@@ -513,40 +509,12 @@ def compute_multi_rn_cls_loss_cluster(end_points):
         end_points['rn_labels_1'] = rn_labels_1
         end_points['rn_preds_1'] = torch.argmax(rn_scores_1, dim=1)
 
-    if 'same_instance' in relation_type:
-        """
-            Compute loss for relation_1: same instance  #same category & box's iou large enough
-        """
-        rn_scores_2 = end_points['rn_logits_2']
+    
 
-        if len(bboxes) == 0:
-            bboxes = get_obbs(end_points)
-            bs, roi_num, point_num, dim = bboxes.shape
-            bboxes_i = bboxes.unsqueeze(2).repeat(1, 1, pair_num, 1, 1).reshape(bs, roi_num * pair_num, point_num, dim)
-            bboxes_j = bboxes[torch.arange(bs).unsqueeze(1).repeat(1, roi_num * pair_num).reshape(bs * roi_num * pair_num),
-                       nearest_n_index_reshape, :, :].reshape(bs, roi_num * pair_num, point_num, dim)
-
-        if len(proposal_labels) == 0:
-            proposal_labels = torch.gather(end_points['sem_cls_label'], 1, object_assignment)
-            _label_i = proposal_labels.unsqueeze(2).repeat(1, 1, pair_num).view(bs, roi_num * pair_num)
-            _label_j = proposal_labels.index_select(1, nearest_n_index_reshape)
-            _label_j = _label_j[torch.arange(bs).cuda().view(bs, -1), torch.arange(bs * roi_num * pair_num).view(bs, -1)]
-
-        rn_labels_2 = compute_ins_relation(bboxes_i, bboxes_j, _label_i, _label_j)
-        criterion = nn.CrossEntropyLoss(torch.Tensor(RN_CLS_WEIGHTS2).cuda(), reduction='none')
-        rn_loss_2 = criterion(rn_scores_2, rn_labels_2)
-        rn_loss_2 = torch.sum(rn_loss_2 * rn_mask) / (torch.sum(rn_mask) + 1e-6)
-
-        print("rn2_scores: ", len(np.where(np.argmax(rn_scores_2.cpu().detach().numpy(), 1) == 1)[0]))
-        print("rn2 labels: {},   rn_labels_num: {}".format(len(np.where(rn_labels_2.cpu().detach().numpy() == 1)[0]),
-                                                           rn_labels_2.cpu().detach().numpy().shape))
-        end_points['rn_labels_2'] = rn_labels_2
-        end_points['rn_preds_2'] = torch.argmax(rn_scores_2, dim=1)
-
-    rn_loss = rn_loss_0 + rn_loss_1 + rn_loss_2
+    rn_loss = rn_loss_0 + rn_loss_1 
 
     # print("rn_mask: ", rn_mask)
-    return [rn_loss, rn_loss_0, rn_loss_1, rn_loss_2]
+    return [rn_loss, rn_loss_0, rn_loss_1]
 
 
 def compute_multi_rn_cls_loss(end_points):
@@ -595,7 +563,7 @@ def compute_multi_rn_cls_loss(end_points):
         """
         rn_scores_0 = end_points['rn_logits_0']
 
-        proposal_labels = torch.gather(end_points['sem_cls_label'], 1, object_assignment)  # object_assignment的shape是多少 (bs, num_proposal) I GUESS
+        proposal_labels = torch.gather(end_points['sem_cls_label'], 1, object_assignment)  
 
         _label_i = proposal_labels.unsqueeze(2).repeat(1, 1, pair_num).view(bs, roi_num * pair_num)
         _label_j = proposal_labels.index_select(1, nearest_n_index_reshape)
@@ -640,40 +608,12 @@ def compute_multi_rn_cls_loss(end_points):
         end_points['rn_labels_1'] = rn_labels_1
         end_points['rn_preds_1'] = torch.argmax(rn_scores_1, dim=1)
 
-    if 'same_instance' in relation_type:
-        """
-            Compute loss for relation_1: same instance  #same category & box's iou large enough
-        """
-        rn_scores_2 = end_points['rn_logits_2']
 
-        if len(bboxes) == 0:
-            bboxes = get_obbs(end_points)
-            bs, roi_num, point_num, dim = bboxes.shape
-            bboxes_i = bboxes.unsqueeze(2).repeat(1, 1, pair_num, 1, 1).reshape(bs, roi_num * pair_num, point_num, dim)
-            bboxes_j = bboxes[torch.arange(bs).unsqueeze(1).repeat(1, roi_num * pair_num).reshape(bs * roi_num * pair_num),
-                       nearest_n_index_reshape, :, :].reshape(bs, roi_num * pair_num, point_num, dim)
 
-        if len(proposal_labels) == 0:
-            proposal_labels = torch.gather(end_points['sem_cls_label'], 1, object_assignment)
-            _label_i = proposal_labels.unsqueeze(2).repeat(1, 1, pair_num).view(bs, roi_num * pair_num)
-            _label_j = proposal_labels.index_select(1, nearest_n_index_reshape)
-            _label_j = _label_j[torch.arange(bs).cuda().view(bs, -1), torch.arange(bs * roi_num * pair_num).view(bs, -1)]
-
-        rn_labels_2 = compute_ins_relation(bboxes_i, bboxes_j, _label_i, _label_j)
-        criterion = nn.CrossEntropyLoss(torch.Tensor(RN_CLS_WEIGHTS2).cuda(), reduction='none')
-        rn_loss_2 = criterion(rn_scores_2, rn_labels_2)
-        rn_loss_2 = torch.sum(rn_loss_2 * rn_mask) / (torch.sum(rn_mask) + 1e-6)
-
-        print("rn2_scores: ", len(np.where(np.argmax(rn_scores_2.cpu().detach().numpy(), 1) == 1)[0]))
-        print("rn2 labels: {},   rn_labels_num: {}".format(len(np.where(rn_labels_2.cpu().detach().numpy() == 1)[0]),
-                                                           rn_labels_2.cpu().detach().numpy().shape))
-        end_points['rn_labels_2'] = rn_labels_2
-        end_points['rn_preds_2'] = torch.argmax(rn_scores_2, dim=1)
-
-    rn_loss = rn_loss_0 + rn_loss_1 + rn_loss_2
+    rn_loss = rn_loss_0 + rn_loss_1 
 
     # print("rn_mask: ", rn_mask)
-    return [rn_loss, rn_loss_0, rn_loss_1, rn_loss_2]
+    return [rn_loss, rn_loss_0, rn_loss_1]
 
 
 def compute_ins_relation(bboxes_i, bboxes_j, cls_i, cls_j, thr=0.25):
