@@ -19,7 +19,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--num_point', type=int, default=40000, help='Point Number [default: 40000]')
 parser.add_argument('--scene_name', default='scene0609_02', help='Scene name. [default: scene0609_02_vh_clean_2.ply]')
 parser.add_argument('--checkpoint_path', default='demo_files/VoteNet_ARM3D_pretrained_model.tar', help='pretrained model path')
-parser.add_argument('--pc_root', default='/home/lyq/Dataset/ScanNet/scannet/', help='pc root')
+parser.add_argument('--pc_root', default='./demo_files/', help='pc root. if u want to test other scene, change it to the path of YOUR_DATA_ROOT like /home/lyq/Dataset/ScanNet/scannet/')
+parser.add_argument('--npy_root', default='./demo_files/', help='preprocessed data root. if you want to test other scene, change it to the path of YOUR_DATA_ROOT once you have prepared the data like ./scannet/scannet_train_detection_data/')
 parser.add_argument('--model', default='votenet_ARM3D', help='Model for visualization')
 parser.add_argument('--num_target', type=int, default=256, help='Point Number [default: 256]')
 
@@ -53,7 +54,7 @@ def preprocess_point_cloud(point_cloud):
     return pc
 
 
-def get_GTlabel(end_points, scan_name, data_path = 'scannet/scannet_train_detection_data'):
+def get_GTlabel(end_points, scan_name, data_path):
     """
     Returns a dict with following keys:
         point_clouds: (N,3+C)
@@ -130,13 +131,14 @@ if __name__=='__main__':
     # Then run demo.py
     scene_pc = FLAGS.scene_name +"_vh_clean_2.ply"
     scene_meta = FLAGS.scene_name +".txt"
-    pc_path = os.path.join("scannet/scans/"+FLAGS.scene_name, scene_pc)
 
     #rotate the scene and save aligned mesh
     dump_dir = os.path.join(demo_dir, FLAGS.scene_name)
     if not os.path.exists(dump_dir): os.mkdir(dump_dir) 
+   
     clean_pc_path = FLAGS.pc_root+FLAGS.scene_name +"/"+ scene_pc
     scene_meta_path = FLAGS.pc_root+FLAGS.scene_name +"/"+scene_meta
+    print("clean_pc_path:",clean_pc_path)
     export_aligned_mesh(clean_pc_path,scene_meta_path,dump_dir+"/"+FLAGS.scene_name+".ply")
     print("Export axis aligned mesh")
 
@@ -147,12 +149,11 @@ if __name__=='__main__':
         'conf_thresh': 0.5, 'dataset_config': DC}
 
     # Init the model and optimzier
-    MODEL = importlib.import_module('votenet_with_rn') # import network module
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     if FLAGS.model =='votenet_ARM3D':
-        MODEL = importlib.import_module('votenet_ARM3D') # import network module
-        net = MODEL.VoteNet_ARM3D(num_class=DC.num_class,
+        MODEL = importlib.import_module('votenet_with_rn') # import network module
+        net = MODEL.votenet_ARM3D(num_class=DC.num_class,
                 num_heading_bin=DC.num_heading_bin,
                 num_size_cluster=DC.num_size_cluster,
                 mean_size_arr=DC.mean_size_arr,
@@ -169,8 +170,6 @@ if __name__=='__main__':
     checkpoint = torch.load(checkpoint_path)
     net.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    epoch = checkpoint['epoch']
-    print("Loaded checkpoint %s (epoch: %d)"%(checkpoint_path, epoch))
    
     # Load and preprocess input point cloud 
     net.eval() # set model to eval mode (for bn and dp)
@@ -189,7 +188,7 @@ if __name__=='__main__':
     print('Inference time: %f'%(toc-tic))
     end_points['point_clouds'] = inputs['point_clouds']
     pred_map_cls = parse_predictions(end_points, eval_config_dict)
-    end_points = get_GTlabel(end_points, scan_name)
+    end_points = get_GTlabel(end_points, scan_name, FLAGS.npy_root)
     # print("KEYS:",end_points.keys())
     print('Finished detection. %d object detected.'%(len(pred_map_cls[0])))
   

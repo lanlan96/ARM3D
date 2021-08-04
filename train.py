@@ -40,7 +40,7 @@ from tf_visualizer import Visualizer as TfVisualizer
 from ap_helper import APCalculator, parse_predictions, parse_groundtruths
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', default='votenet_with_ARM3D', help='Model file name [default: votenet]')
+parser.add_argument('--model', default='votenet_with_rn', help='Model file name [default: votenet]')
 parser.add_argument('--dataset', default='scannet', help='Dataset name. sunrgbd or scannet. [default: sunrgbd]')
 parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
 parser.add_argument('--log_dir', default='log_scannet', help='Dump dir to save model checkpoint [default: log]')
@@ -170,8 +170,8 @@ MODEL = importlib.import_module(FLAGS.model) # import network module
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 
-Detector = MODEL.VoteNet_pred
-print("MODEL.VoteNet_pred")
+Detector = MODEL.votenet_ARM3D
+print("MODEL.votenet_ARM3D")
 
 net = Detector(num_class=DATASET_CONFIG.num_class,
                num_heading_bin=DATASET_CONFIG.num_heading_bin,

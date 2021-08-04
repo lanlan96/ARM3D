@@ -178,20 +178,20 @@ class ProposalModule_pred(nn.Module):
         end_points['aggregated_vote_inds'] = sample_inds # (batch_size, num_proposal,) # should be 0,1,2,...,num_proposal
 
 
-        gt_center = end_points['center_label'][:,:,0:3]
-        dist1, ind1, dist2, _ = nn_distance(xyz, gt_center) # dist1: BxK, dist2: BxK2
-        euclidean_dist1 = torch.sqrt(dist1+1e-6)
-        B = gt_center.shape[0]
-        K = xyz.shape[1]
-        objectness_label = torch.zeros((B,K), dtype=torch.long).cuda()
-        objectness_label[euclidean_dist1<NEAR_THRESHOLD] = 1  #(8, 256) 1
+        # gt_center = end_points['center_label'][:,:,0:3]
+        # dist1, ind1, dist2, _ = nn_distance(xyz, gt_center) # dist1: BxK, dist2: BxK2
+        # euclidean_dist1 = torch.sqrt(dist1+1e-6)
+        # B = gt_center.shape[0]
+        # K = xyz.shape[1]
+        # objectness_label = torch.zeros((B,K), dtype=torch.long).cuda()
+        # objectness_label[euclidean_dist1<NEAR_THRESHOLD] = 1  #(8, 256) 1
 
        
         objectness_pred, end_points = self.onet(features, end_points)
         # np.set_printoptions(threshold=np.inf)
-        print("\nGT:", torch.sum(objectness_label,dim =1))
-        obj_acc = torch.sum(objectness_pred==objectness_label.long()).item()/(objectness_label.shape[0]*objectness_label.shape[1])
-        print("OBJ ACCCCCCCCCCCCCCC:",obj_acc)
+        # print("\nGT:", torch.sum(objectness_label,dim =1))
+        # obj_acc = torch.sum(objectness_pred==objectness_label.long()).item()/(objectness_label.shape[0]*objectness_label.shape[1])
+        # print("OBJ ACCCCCCCCCCCCCCC:",obj_acc)
 
 
         idx_obj, sum_1 = get_index(objectness_pred)

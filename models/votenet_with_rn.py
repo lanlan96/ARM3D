@@ -109,7 +109,7 @@ class votenet_ARM3D(nn.Module):
         end_points['vote_xyz'] = xyz
         end_points['vote_features'] = features
         
-        end_points['center_label'] = inputs['center_label']
+        # end_points['center_label'] = inputs['center_label']
 
         end_points = self.pnet(xyz, features, end_points)
 

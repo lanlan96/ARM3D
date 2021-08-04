@@ -4,8 +4,7 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 from nn_distance import nn_distance, huber_loss
 import numpy as np
-from SE import SE
-from CBAM import CBAM
+
 import matplotlib.pyplot as plt
 
 
@@ -18,7 +17,7 @@ class RNModule(nn.Module):
         print('relation pair: {}'.format(self.relation_pair))
         print("FLAGS.relation_type: ", self.relation_type)
         print("random: ", self.random)
-        # self.gu_conv = torch.nn.Conv2d(128, 256, (1, 1))
+
         self.local_conv1= torch.nn.Conv2d(256, 256 , (1, 1)) 
         self.local_bn1 = torch.nn.BatchNorm2d(256)
 

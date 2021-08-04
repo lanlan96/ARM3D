@@ -25,7 +25,7 @@ import xlwt, xlrd
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', default='votenet_with_rn_object', help='Model file name [default: votenet]')
+parser.add_argument('--model', default='votenet_with_rn', help='Model file name [default: votenet]')
 parser.add_argument('--dataset', default='scannet', help='Dataset name. sunrgbd or scannet. [default: sunrgbd]')
 parser.add_argument('--checkpoint_path', default='demo_files/pretrained_votenet_on_scannet.tar', help='Model checkpoint path [default: None]')
 parser.add_argument('--dump_dir', default='eval_scannet', help='Dump dir to save sample outputs [default: None]')
@@ -47,8 +47,7 @@ parser.add_argument('--conf_thresh', type=float, default=0.05, help='Filter out 
 parser.add_argument('--faster_eval', action='store_true', help='Faster evaluation by skippling empty bounding box removal.')
 parser.add_argument('--shuffle_dataset', action='store_true', help='Shuffle the dataset (random order).')
 parser.add_argument('--gpu', type=int, default=0, help='gpu to allocate')
-parser.add_argument('--obj_restore', type=int, default=0, help='whether to restore votenet to predict obj')
-parser.add_argument('--obj_pred', type=int, default=1, help='whether to restore votenet to predict obj')
+
 
 FLAGS = parser.parse_args()
 
@@ -139,19 +138,11 @@ MODEL = importlib.import_module(FLAGS.model) # import network module
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 num_input_channel = int(FLAGS.use_color)*3 + int(not FLAGS.no_height)*1
 
-if FLAGS.model == 'boxnet':
-    Detector = MODEL.BoxNet
-else:
-    if FLAGS.obj_restore == 1:
-        Detector = MODEL.VoteNet_restore
-        print("MODEL.VoteNet_restore")
-    else:
-        if FLAGS.obj_pred ==1:
-            Detector = MODEL.VoteNet_pred
-            print("MODEL.VoteNet_pred")
-        else:
-            Detector = MODEL.VoteNet
-            print("MODEL.VoteNet")
+
+
+Detector = MODEL.votenet_ARM3D
+print("MODEL.votenet_ARM3D")
+
 net = Detector(num_class=DATASET_CONFIG.num_class,
                num_heading_bin=DATASET_CONFIG.num_heading_bin,
                num_size_cluster=DATASET_CONFIG.num_size_cluster,
