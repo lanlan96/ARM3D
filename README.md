@@ -8,6 +8,21 @@
 
 ARM3D is a plug-and-play module which can be conveniently applied to different 3D object detectors. It provides precise and useful relation context to help 3D detectors locate and classify objects more accurately and robustly. We implement two applications on VoteNet and MLCVNet. We e valuate its improved performance on ScanNetV2 and SUN RGB-D dataset. ARM3D can be widely applicable on different 3D detection frameworks. This is the application of VoteNet+ARM3D, which is VoteNet equipped with relation module ARM3D code implementation on ScanNet dataset and sunrgbd dataset.
 
+## Citation
+
+If you find this project or this paper useful for your research, please cite:
+
+```
+@article{lan2022arm3d,
+  title={ARM3D: Attention-based relation module for indoor 3D object detection},
+  author={Lan, Yuqing and Duan, Yao and Liu, Chenyi and Zhu, Chenyang and Xiong, Yueshan and Huang, Hui and Xu, Kai},
+  journal={Computational Visual Media},
+  pages={1--20},
+  year={2022},
+  publisher={Springer}
+}
+```
+
 ## Installation
 
 Please follow the [Installation](https://github.com/facebookresearch/votenet#installation) and [Data preparation](https://github.com/facebookresearch/votenet#data-preparation) structions in VoteNet. Make sure that your data structure is correct and the same as VoteNet.
